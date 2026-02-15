@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import Integer, String, DateTime, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Integer, String, DateTime, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,3 +18,5 @@ class Request(Base):
     request_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    embedding_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    embedding: Mapped[Optional[list]] = mapped_column(Vector(1024), nullable=True)

@@ -1,14 +1,17 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.models.request import Request
-from app.models.physical_rule import PhysicalRule
-from app.models.physical_rule_source import PhysicalRuleSource
-from app.models.physical_rule_destination import PhysicalRuleDestination
 from app.models.deficiency import Deficiency
+from app.models.physical_rule import PhysicalRule
+from app.models.physical_rule_destination import PhysicalRuleDestination
+from app.models.physical_rule_source import PhysicalRuleSource
+from app.models.request import Request
+from app.models.semantic_deficiency import SemanticDeficiency
+from app.services import embedding_service
 
 
 def seed_data(db: Session) -> dict:
     # Clear existing data
+    db.query(SemanticDeficiency).delete()
     db.query(Deficiency).delete()
     db.query(PhysicalRuleDestination).delete()
     db.query(PhysicalRuleSource).delete()
@@ -158,8 +161,35 @@ def seed_data(db: Session) -> dict:
     db.add_all([rule1, rule2, rule3, rule4, rule5, rule6, rule7])
     db.commit()
 
+    # Generate embeddings for all seeded requests
+    all_requests = db.query(Request).all()
+    for req in all_requests:
+        data = req.request_json
+        text = embedding_service.build_request_text(
+            req.name, data["sources"], data["destinations"], data["ports"]
+        )
+        req.embedding_text = text
+        req.embedding = embedding_service.embed(text)
+
+    # Generate embeddings for all seeded physical rules
+    all_rules = (
+        db.query(PhysicalRule)
+        .options(joinedload(PhysicalRule.sources), joinedload(PhysicalRule.destinations))
+        .all()
+    )
+    for rule in all_rules:
+        sources = [s.address for s in rule.sources]
+        destinations = [d.address for d in rule.destinations]
+        text = embedding_service.build_rule_text(
+            rule.rule_name, rule.action, sources, destinations, rule.ports
+        )
+        rule.embedding_text = text
+        rule.embedding = embedding_service.embed(text)
+
+    db.commit()
+
     return {
-        "message": "Seed data created successfully",
+        "message": "Seed data created successfully with embeddings",
         "requests_created": 7,
         "physical_rules_created": 7,
     }

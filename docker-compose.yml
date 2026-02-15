@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: portal_user
       POSTGRES_PASSWORD: portal_pass
@@ -23,6 +23,7 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql://portal_user:portal_pass@db:5432/rules_review
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
     depends_on:
       db:
         condition: service_healthy
@@ -30,6 +31,17 @@ services:
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - .:/app
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    ports:
+      - "8090:8090"
+    environment:
+      API_BASE_URL: http://api:8000
+    depends_on:
+      - api
 
 volumes:
   pgdata:

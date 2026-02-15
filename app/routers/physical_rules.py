@@ -6,6 +6,7 @@ from app.models.physical_rule import PhysicalRule
 from app.models.physical_rule_source import PhysicalRuleSource
 from app.models.physical_rule_destination import PhysicalRuleDestination
 from app.schemas.physical_rule import PhysicalRuleCreate, PhysicalRuleResponse
+from app.services import embedding_service
 
 router = APIRouter(prefix="/api/physical-rules", tags=["physical-rules"])
 
@@ -22,6 +23,12 @@ def create_physical_rule(payload: PhysicalRuleCreate, db: Session = Depends(get_
         rule.sources.append(PhysicalRuleSource(address=addr))
     for addr in payload.destinations:
         rule.destinations.append(PhysicalRuleDestination(address=addr))
+
+    text = embedding_service.build_rule_text(
+        payload.rule_name, payload.action, payload.sources, payload.destinations, payload.ports
+    )
+    rule.embedding_text = text
+    rule.embedding = embedding_service.embed(text)
 
     db.add(rule)
     db.commit()

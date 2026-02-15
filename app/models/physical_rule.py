@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import Integer, String, DateTime, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Integer, String, DateTime, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +18,8 @@ class PhysicalRule(Base):
     ports: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
     action: Mapped[str] = mapped_column(String(20), nullable=False, default="allow")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    embedding_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    embedding: Mapped[Optional[list]] = mapped_column(Vector(1024), nullable=True)
 
     sources = relationship("PhysicalRuleSource", back_populates="rule", cascade="all, delete-orphan")
     destinations = relationship("PhysicalRuleDestination", back_populates="rule", cascade="all, delete-orphan")
