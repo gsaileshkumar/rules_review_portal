@@ -87,11 +87,6 @@ def run_review(db: Session) -> ReviewResult:
             deficiency = Deficiency(
                 type="no_matching_request",
                 rule_id=rule_id,
-                details={
-                    "sources": details["sources"],
-                    "destinations": details["destinations"],
-                    "ports": details["ports"],
-                },
             )
             db.add(deficiency)
             db.flush()
@@ -111,11 +106,6 @@ def run_review(db: Session) -> ReviewResult:
             deficiency = Deficiency(
                 type="no_matching_rule",
                 request_id=req_id,
-                details={
-                    "sources": details["sources"],
-                    "destinations": details["destinations"],
-                    "ports": details["ports"],
-                },
             )
             db.add(deficiency)
             db.flush()
