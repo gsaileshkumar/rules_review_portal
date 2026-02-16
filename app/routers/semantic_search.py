@@ -16,15 +16,6 @@ from app.services import embedding_service
 router = APIRouter(prefix="/api/semantic-search", tags=["semantic-search"])
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
-
-
 @router.post("/by-request/{request_id}", response_model=SemanticSearchResult)
 def search_by_request(
     request_id: int,
@@ -50,16 +41,22 @@ def search_by_request(
     query_embedding = list(req.embedding)
     query_text = req.embedding_text or ""
 
-    rules = (
-        db.query(PhysicalRule)
+    # KNN query: ORDER BY embedding <=> query_vector activates the HNSW index.
+    # Over-fetch by 4x to account for threshold post-filtering.
+    distance_expr = PhysicalRule.embedding.cosine_distance(query_embedding).label("distance")
+    rows = (
+        db.query(PhysicalRule, distance_expr)
         .options(joinedload(PhysicalRule.sources), joinedload(PhysicalRule.destinations))
         .filter(PhysicalRule.embedding.isnot(None))
+        .order_by(distance_expr)
+        .limit(limit * 4)
         .all()
     )
 
+    # Results are already ordered by similarity descending (distance ascending).
     matches = []
-    for rule in rules:
-        score = _cosine_similarity(query_embedding, list(rule.embedding))
+    for rule, distance in rows:
+        score = round(1.0 - distance, 4)
         if score >= threshold:
             sources = [s.address for s in rule.sources]
             destinations = [d.address for d in rule.destinations]
@@ -70,11 +67,10 @@ def search_by_request(
                     sources=sources,
                     destinations=destinations,
                     ports=rule.ports,
-                    similarity_score=round(score, 4),
+                    similarity_score=score,
                 )
             )
 
-    matches.sort(key=lambda m: m.similarity_score, reverse=True)
     matches = matches[:limit]
 
     return SemanticSearchResult(
@@ -118,11 +114,18 @@ def search_by_rule(
     query_embedding = list(rule.embedding)
     query_text = rule.embedding_text or ""
 
-    requests = db.query(Request).filter(Request.embedding.isnot(None)).all()
+    distance_expr = Request.embedding.cosine_distance(query_embedding).label("distance")
+    rows = (
+        db.query(Request, distance_expr)
+        .filter(Request.embedding.isnot(None))
+        .order_by(distance_expr)
+        .limit(limit * 4)
+        .all()
+    )
 
     matches = []
-    for req in requests:
-        score = _cosine_similarity(query_embedding, list(req.embedding))
+    for req, distance in rows:
+        score = round(1.0 - distance, 4)
         if score >= threshold:
             data = req.request_json
             matches.append(
@@ -132,11 +135,10 @@ def search_by_rule(
                     sources=data["sources"],
                     destinations=data["destinations"],
                     ports=data["ports"],
-                    similarity_score=round(score, 4),
+                    similarity_score=score,
                 )
             )
 
-    matches.sort(key=lambda m: m.similarity_score, reverse=True)
     matches = matches[:limit]
 
     return SemanticSearchResult(
@@ -156,14 +158,17 @@ def search_by_text(payload: TextSearchRequest, db: Session = Depends(get_db)):
     matches = []
 
     if payload.search_in in ("rules", "both"):
-        rules = (
-            db.query(PhysicalRule)
+        distance_expr = PhysicalRule.embedding.cosine_distance(query_embedding).label("distance")
+        rows = (
+            db.query(PhysicalRule, distance_expr)
             .options(joinedload(PhysicalRule.sources), joinedload(PhysicalRule.destinations))
             .filter(PhysicalRule.embedding.isnot(None))
+            .order_by(distance_expr)
+            .limit(payload.limit * 4)
             .all()
         )
-        for rule in rules:
-            score = _cosine_similarity(query_embedding, list(rule.embedding))
+        for rule, distance in rows:
+            score = round(1.0 - distance, 4)
             if score >= payload.threshold:
                 sources = [s.address for s in rule.sources]
                 destinations = [d.address for d in rule.destinations]
@@ -175,14 +180,21 @@ def search_by_text(payload: TextSearchRequest, db: Session = Depends(get_db)):
                         sources=sources,
                         destinations=destinations,
                         ports=rule.ports,
-                        similarity_score=round(score, 4),
+                        similarity_score=score,
                     )
                 )
 
     if payload.search_in in ("requests", "both"):
-        requests = db.query(Request).filter(Request.embedding.isnot(None)).all()
-        for req in requests:
-            score = _cosine_similarity(query_embedding, list(req.embedding))
+        distance_expr = Request.embedding.cosine_distance(query_embedding).label("distance")
+        rows = (
+            db.query(Request, distance_expr)
+            .filter(Request.embedding.isnot(None))
+            .order_by(distance_expr)
+            .limit(payload.limit * 4)
+            .all()
+        )
+        for req, distance in rows:
+            score = round(1.0 - distance, 4)
             if score >= payload.threshold:
                 data = req.request_json
                 matches.append(
@@ -193,7 +205,7 @@ def search_by_text(payload: TextSearchRequest, db: Session = Depends(get_db)):
                         sources=data["sources"],
                         destinations=data["destinations"],
                         ports=data["ports"],
-                        similarity_score=round(score, 4),
+                        similarity_score=score,
                     )
                 )
 
